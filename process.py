@@ -1,14 +1,21 @@
 import skimage
 import numpy as np
+import cv2
 
 from pathlib import Path
 from matplotlib import pyplot as plt
 
 def process_scan(scan_path: Path, filenames: list = None):
     """
-    The scanned data should be a single image (.tif). The scan consists of image plates that appear as rectangular sections in the scan. This function will manually crop the image by adding horizontal and vertical lines to indicate the cropping positions.
+    The scanned data should be a single image (.tif). The scan consists of image plates that appear as rectangular sections in the scan. This function will crop the scan to individual image plates based on OpenCV contour detection.
+
     1. Load the scanned image.
-    2. Add horizontal and vertical lines by clicking on the horizontal and vertical sum plots.
+    2. Take background value - this is done by averaging over the the 50th row of pixels (assumes there is blank space at the top of the scan).
+    3. Create a binary mask where pixel values greater than the background are set to 1, else 0.
+    4. Smooth the binary mask using a Butterworth low-pass filter to reduce noise.
+    5. Create another mask that only takes values above a threshold (0.1).
+    6. Use OpenCV on this second mask to find rectangles that correspond to image plates. The minimum width and height of the rectangles are defined based on expected image plate sizes.
+
     """
 
     if filenames is None:
@@ -20,37 +27,62 @@ def process_scan(scan_path: Path, filenames: list = None):
     
     if scan_path.suffix.lower() in ['.jpg', '.png']:
         scan_image = 0.2125 * scan[:,:,0] + 0.7154 * scan[:,:,1] + 0.0721 * scan[:,:,2]
+    else:
+        scan_image = scan
+        scan_image_adjusted = skimage.exposure.adjust_gamma(scan, 0.1) # for visualization only
 
     xsize = scan_image.shape[1]
     ysize = scan_image.shape[0]
     print(f"Scan size: {xsize} x {ysize}")
     
-    smooth = 5
-    horizontal_sum =  np.convolve(scan_image.sum(axis=1), np.ones(smooth)/smooth, mode='same')[::-1]
-    vertical_sum = np.convolve(scan_image.sum(axis=0), np.ones(smooth)/smooth, mode='same')
-    
-    # Adjust layout to remove whitespace between subplots
-    fig, ax = plt.subplots(2, 2, figsize=(10, 6), gridspec_kw={'wspace': 0, 'hspace': 0})
+    horizontal_sum =  scan_image.sum(axis=1)    
+    bg_avg = horizontal_sum[50]/xsize
 
-    ax[0,0].imshow(scan_image, cmap='gray')
-    ax[0,1].plot(horizontal_sum, range(len(horizontal_sum)))    
-    ax[1,0].plot(vertical_sum)
-    ax[1,1].set_axis_off()
-    ax[0,1].invert_yaxis()  # Match orientation with the original image
+    # Smooth image using a butterworth low-pass filter
+    mask = (scan_image > bg_avg)
+    smoothed_mask = skimage.filters.butterworth(mask, high_pass=False, cutoff_frequency_ratio=0.03)
+    mask_2 = np.where(smoothed_mask < 0.1, 0, 1)    
 
-    ax[1,0].set_xlim(0, scan_image.shape[1])
-    ax[0,1].set_ylim(0, scan_image.shape[0])
-    ax[1,0] = ax[0,0].twiny()
-    ax[0,1] = ax[0,0].twinx()
+    print(f"Average Background Value: {bg_avg:.2f}")
+    print(f"Min = {scan_image.min():.1f}")
 
-    # Remove tick labels between subplots
-    for axes in [ax[0,0], ax[0,1], ax[1,0]]:
-        axes.set_aspect('auto', adjustable='box')
-    
-    plt.show()
+    if False:
+        fig, ax = plt.subplots(figsize=(12, 8))
+        # ax.imshow(smoothed_image, cmap='gray')
+        ax.imshow(mask_2, cmap='jet')
+        ax.set_title("Masked Image")
+
+    # Assume mask is a binary image (numpy array)
+    mask_uint8 = (mask_2 * 255).astype(np.uint8)
+    contours, _ = cv2.findContours(mask_uint8, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+    rectangles = []
+    mask_rgb = cv2.cvtColor((mask_2 * 255).astype(np.uint8), cv2.COLOR_GRAY2BGR)
+    min_width = 800  # Width of a HXRD/PHC IP 
+    min_height = 400  # Height of a eSpec IP 
+
+    for cnt in contours:
+        x, y, w, h = cv2.boundingRect(cnt)
+        if w >= min_width and h >= min_height:
+            rectangles.append((x, y, w, h))
+            cv2.rectangle(mask_rgb, (x, y), (x + w, y + h), (255, 0, 0), 50)
+
+    # Downsample scan_image for faster display
+    downsample_factor = 10  # Adjust as needed for speed/quality tradeoff
+    scan_image_small = cv2.resize(scan_image_adjusted, (scan_image.shape[1] // downsample_factor, scan_image.shape[0] // downsample_factor), interpolation=cv2.INTER_AREA)
+
+    # Draw rectangles on the downsampled image
+    scan_image_small_rgb = cv2.cvtColor((scan_image_small / scan_image_small.max() * 255).astype(np.uint8), cv2.COLOR_GRAY2BGR)
+    for (x, y, w, h) in rectangles:
+        x_s, y_s, w_s, h_s = x // downsample_factor, y // downsample_factor, w // downsample_factor, h // downsample_factor
+        cv2.rectangle(scan_image_small_rgb, (x_s, y_s), (x_s + w_s, y_s + h_s), (255, 0, 0), 2)
+
+    fig, ax = plt.subplots()
+    ax.imshow(scan_image_small_rgb)
+    ax.set_title("Detected Rectangles (Downsampled 10x, Gamma Adjusted)")
 
 if __name__ == "__main__":
-    scan_file_path = Path("data/example.jpg")
+    scan_file_path = Path("data/shot06-[Phosphor].tif")
     filenames = [
         "HOPG",
         "XCPI",
@@ -65,3 +97,4 @@ if __name__ == "__main__":
         "HXRD2",
         ]
     process_scan(scan_file_path, filenames)
+    plt.show()
