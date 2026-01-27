@@ -23,14 +23,12 @@ def process_scan(scan_path: Path, filenames: list = None, show_steps = False):
         return
     n_images = len(filenames)
 
-    scan = skimage.io.imread(scan_path)
-    
     if scan_path.suffix.lower() in ['.jpg', '.png']:
-        scan_image = 0.2125 * scan[:,:,0] + 0.7154 * scan[:,:,1] + 0.0721 * scan[:,:,2]
-        scan_image_adjusted = scan_image_adjusted
+        scan = skimage.io.imread(scan_path, as_gray=True)
+        scan_image_adjusted = scan
     else:
-        scan_image = scan
-        scan_image_adjusted = skimage.exposure.adjust_gamma(scan, 0.1) # for visualization only
+        scan_image = skimage.io.imread(scan_path)
+        scan_image_adjusted = skimage.exposure.adjust_gamma(scan_image, 0.1) # for visualization only
 
     xsize = scan_image.shape[1]
     ysize = scan_image.shape[0]
@@ -41,18 +39,20 @@ def process_scan(scan_path: Path, filenames: list = None, show_steps = False):
 
     # Smooth image using a butterworth low-pass filter
     mask = (scan_image > bg_avg)
-    smoothed_mask = skimage.filters.butterworth(mask, high_pass=False, cutoff_frequency_ratio=0.03)
+    smoothed_mask = skimage.filters.butterworth(mask, high_pass=False, cutoff_frequency_ratio=0.04)
     mask_2 = np.where(smoothed_mask < 0.1, 0, 1)    
 
-    print(f"Average Background Value: {bg_avg:.2f}")
-    print(f"Min = {scan_image.min():.1f}")
+    print(f"Average Background Value: {bg_avg:.2g}")
+    print(f"Min = {scan_image.min():.2g}")
 
     if show_steps:
-        fig, ax = plt.subplots(nrows=2, figsize=(7, 7))
-        ax[0].imshow(smoothed_mask, cmap='jet')
-        ax[0].set_title("2. Low-pass")
-        ax[1].imshow(mask_2, cmap='jet')
-        ax[1].set_title("3. Contour > 0.1")
+        fig, ax = plt.subplots(nrows=3, figsize=(7, 7))
+        ax[0].imshow(scan_image, cmap='jet')
+        ax[0].set_title("1. Raw Data")
+        ax[1].imshow(smoothed_mask, cmap='jet')
+        ax[1].set_title("2. Mask + Low-pass")
+        ax[2].imshow(mask_2, cmap='jet')
+        ax[2].set_title("3. Contour > 0.1")
         plt.tight_layout()
 
     # Assume mask is a binary image (numpy array)
@@ -71,7 +71,7 @@ def process_scan(scan_path: Path, filenames: list = None, show_steps = False):
             cv2.rectangle(mask_rgb, (x, y), (x + w, y + h), (255, 0, 0), 50)
 
     # Downsample scan_image for faster display
-    downsample_factor = 10  # Adjust as needed for speed/quality tradeoff
+    downsample_factor = 8  # Adjust as needed for speed/quality tradeoff
     scan_image_small = cv2.resize(scan_image_adjusted, (scan_image.shape[1] // downsample_factor, scan_image.shape[0] // downsample_factor), interpolation=cv2.INTER_AREA)
 
     # Draw rectangles on the downsampled image
@@ -82,7 +82,7 @@ def process_scan(scan_path: Path, filenames: list = None, show_steps = False):
 
     fig, ax = plt.subplots()
     ax.imshow(scan_image_small_rgb)
-    ax.set_title("Detected Rectangles (Downsampled 10x, Gamma Adjusted)")
+    ax.set_title(f"Detected Rectangles (Downsampled {downsample_factor}x, Gamma Adjusted)")
 
 if __name__ == "__main__":
     scan_file_path = Path("data/shot06-[Phosphor].tif")
