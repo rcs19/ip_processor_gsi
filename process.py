@@ -5,9 +5,9 @@ import cv2
 from pathlib import Path
 from matplotlib import pyplot as plt
 
-def process_scan(scan_path: Path, filenames: list = None):
+def process_scan(scan_path: Path, filenames: list = None, show_steps = False):
     """
-    The scanned data should be a single image (.tif). The scan consists of image plates that appear as rectangular sections in the scan. This function will crop the scan to individual image plates based on OpenCV contour detection.
+    The scanned data should be a .tif file. The scan consists of image plates that appear as rectangular sections in the scan. This function will crop the scan to individual image plates based on OpenCV contour detection. The displayed image is downscaled and gamma adjusted for speed and visualization purposes.
 
     1. Load the scanned image.
     2. Take background value - this is done by averaging over the the 50th row of pixels (assumes there is blank space at the top of the scan).
@@ -27,6 +27,7 @@ def process_scan(scan_path: Path, filenames: list = None):
     
     if scan_path.suffix.lower() in ['.jpg', '.png']:
         scan_image = 0.2125 * scan[:,:,0] + 0.7154 * scan[:,:,1] + 0.0721 * scan[:,:,2]
+        scan_image_adjusted = scan_image_adjusted
     else:
         scan_image = scan
         scan_image_adjusted = skimage.exposure.adjust_gamma(scan, 0.1) # for visualization only
@@ -46,11 +47,13 @@ def process_scan(scan_path: Path, filenames: list = None):
     print(f"Average Background Value: {bg_avg:.2f}")
     print(f"Min = {scan_image.min():.1f}")
 
-    if False:
-        fig, ax = plt.subplots(figsize=(12, 8))
-        # ax.imshow(smoothed_image, cmap='gray')
-        ax.imshow(mask_2, cmap='jet')
-        ax.set_title("Masked Image")
+    if show_steps:
+        fig, ax = plt.subplots(nrows=2, figsize=(7, 7))
+        ax[0].imshow(smoothed_mask, cmap='jet')
+        ax[0].set_title("2. Low-pass")
+        ax[1].imshow(mask_2, cmap='jet')
+        ax[1].set_title("3. Contour > 0.1")
+        plt.tight_layout()
 
     # Assume mask is a binary image (numpy array)
     mask_uint8 = (mask_2 * 255).astype(np.uint8)
@@ -96,5 +99,5 @@ if __name__ == "__main__":
         "HXRD1",
         "HXRD2",
         ]
-    process_scan(scan_file_path, filenames)
+    process_scan(scan_file_path, filenames, show_steps=True)
     plt.show()
