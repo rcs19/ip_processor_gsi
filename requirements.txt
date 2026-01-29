@@ -2,5 +2,4 @@ numpy
 scikit-image
 matplotlib
 pathlib
-scipy
 opencv
