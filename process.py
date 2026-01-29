@@ -190,7 +190,7 @@ def interactive_crop_and_save(
         ax.add_patch(rect)
         rect_patches.append(rect)
         ax.text(x_s, y_s, str(i+1), color='yellow', fontsize=10, weight='bold')
-    ax.set_title("Click rectangles in order")
+    ax.set_title("Click rectangles in order. Close all plot windows when done.")
     ax.axis('off')
 
     # Add filenames to the right
@@ -244,6 +244,8 @@ def interactive_crop_and_save(
             image = skimage.io.imread(image_path)
             x, y, w, h = map(int, rect)
             cropped = image[y:y+h, x:x+w].copy()
+            jpg_gamma = 0.3
+            cropped = np.power((cropped - cropped.min()) / (cropped.max() - cropped.min()), jpg_gamma)
             # Normalize to 0-255 uint8
             arr = cropped.astype(np.float32)
             amin = arr.min()
