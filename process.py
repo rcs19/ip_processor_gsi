@@ -102,6 +102,8 @@ def get_rectangles(scan_path: Path, show_steps = False):
         ax[1].set_title("2. Mask + Low-pass")
         ax[2].imshow(downsample(contour_mask.astype(np.uint8),8), cmap='jet')
         ax[2].set_title(f"3. Contour > {contour}")
+        for axes in ax:
+            axes.axis('off')
         plt.tight_layout()
 
     # Assume mask is a binary image (numpy array)
@@ -167,7 +169,10 @@ def interactive_crop_and_save(image_path, rectangles, filenames, output_folder):
     ext = Path(image_path).suffix
     image_prefix = image_path.stem.replace("-[Phosphor]", "")
 
-    fig, ax = plt.subplots()
+    from matplotlib.gridspec import GridSpec
+    fig = plt.figure(figsize=(10, 6))
+    gs = GridSpec(1, 2, width_ratios=[4, 1], wspace=0.05)
+    ax = fig.add_subplot(gs[0])
     ax.imshow(img_disp_rgb)
     rect_patches = []
     for i, (x, y, w, h) in enumerate(rectangles):
@@ -176,7 +181,14 @@ def interactive_crop_and_save(image_path, rectangles, filenames, output_folder):
         ax.add_patch(rect)
         rect_patches.append(rect)
         ax.text(x_s, y_s, str(i+1), color='yellow', fontsize=10, weight='bold')
-    plt.title("Click rectangles in order:\n"+",".join(filenames))
+    ax.set_title("Click rectangles in order")
+    ax.axis('off')
+
+    # Add filenames to the right
+    ax2 = fig.add_subplot(gs[1])
+    ax2.axis('off')
+    filenames_str = '\n'.join(f"{i+1}. {name}" for i, name in enumerate(filenames))
+    ax2.text(0, 0.8, filenames_str, va='top', ha='left', fontsize=11, family='monospace')
 
     selected = []
     used = set()
@@ -216,9 +228,14 @@ def interactive_crop_and_save(image_path, rectangles, filenames, output_folder):
         print(f"Saved {out_path}")
 
 if __name__ == "__main__":
+    # 1. Rectangle detection works best using non-PSL .tif - use this file to obtain rectangle coordinates
     scan_file_path = Path("data/shot06-[Phosphor].tif")
-    rectangles = get_rectangles(scan_file_path, show_steps=False)
+    rectangles = get_rectangles(scan_file_path, show_steps=True)
 
+    # 2. Use the detected rectangles to crop the actual PSL (photo-stimulated luminescence) image
+    image_to_crop = Path("data/shot06-[Phosphor]_PSL.tif")
+
+    # 3. Specify filenames of output cropped images. You will click these in order of dispalyed images.
     filenames = [
         "HOPG",
         "XPCI",
@@ -232,9 +249,16 @@ if __name__ == "__main__":
         "HXRD1",
         "HXRD2",
         "XPCI_rear",
-        "ESPEC_ext_1",
-        "ESPEC_ext_2",
-        "ESPEC_ext_3",
-        "ESPEC_ext_4"
+        "ESPEC_ext1",
+        "ESPEC_ext2",
+        "ESPEC_ext3",
+        "ESPEC_ext4"
         ]
-    interactive_crop_and_save(Path("data/shot06-[Phosphor]_PSL.tif"), rectangles, filenames, Path("output/images"))
+    
+    # 4. In this function you will click on rectangles in order of specified filenames in the list. The scan will be cropped to the selected rectangles and output as individual images. 
+    interactive_crop_and_save(
+        image_path=image_to_crop, 
+        rectangles=rectangles, 
+        filenames=filenames, 
+        output_folder=Path("output/images")
+        )
