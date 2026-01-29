@@ -137,7 +137,10 @@ def get_rectangles(scan_path: Path, show_steps = False):
 
     return rectangles
 
-def interactive_crop_and_save(image_path, rectangles, filenames, output_folder):
+def interactive_crop_and_save(
+    image_path, rectangles, filenames, output_folder,
+    save=True, save_jpeg=False, cmap="jet"
+):
     """
     Display image with rectangles, let user click rectangles in order of filenames, and save crops.
     Args:
@@ -145,6 +148,9 @@ def interactive_crop_and_save(image_path, rectangles, filenames, output_folder):
         rectangles: List of (x, y, w, h) tuples.
         filenames: List of output filenames (no extension).
         output_folder: Folder to save cropped images.
+        save: If True, save cropped images (default True).
+        save_jpeg: If True, also save as JPEG (default False).
+        cmap: Colormap for display (default 'jet').
     """
     import matplotlib.patches as patches
     image = skimage.io.imread(image_path)
@@ -173,7 +179,10 @@ def interactive_crop_and_save(image_path, rectangles, filenames, output_folder):
     fig = plt.figure(figsize=(10, 6))
     gs = GridSpec(1, 2, width_ratios=[4, 1], wspace=0.05)
     ax = fig.add_subplot(gs[0])
-    ax.imshow(img_disp_rgb)
+    if cmap and img_disp_rgb.ndim == 2:
+        ax.imshow(img_disp_rgb, cmap=cmap)
+    else:
+        ax.imshow(img_disp_rgb)
     rect_patches = []
     for i, (x, y, w, h) in enumerate(rectangles):
         x_s, y_s, w_s, h_s = x // downsample_factor, y // downsample_factor, w // downsample_factor, h // downsample_factor
@@ -221,11 +230,32 @@ def interactive_crop_and_save(image_path, rectangles, filenames, output_folder):
 
     output_folder = Path(output_folder)
     output_folder.mkdir(parents=True, exist_ok=True)
-    for idx, fname in zip(selected, filenames):
-        rect = rectangles[idx]
-        out_path = output_folder / f"{image_prefix}_{fname}{ext}"
-        crop_and_save(image_path, rect, out_path)
-        print(f"Saved {out_path}")
+    if save:
+        for idx, fname in zip(selected, filenames):
+            rect = rectangles[idx]
+            out_path = output_folder / f"{image_prefix}_{fname}{ext}"
+            crop_and_save(image_path, rect, out_path)
+            print(f"Saved {out_path}")
+
+    if save_jpeg:
+        for idx, fname in zip(selected, filenames):
+            rect = rectangles[idx]
+            # Read and crop image, normalize, save as JPEG
+            image = skimage.io.imread(image_path)
+            x, y, w, h = map(int, rect)
+            cropped = image[y:y+h, x:x+w].copy()
+            # Normalize to 0-255 uint8
+            arr = cropped.astype(np.float32)
+            amin = arr.min()
+            amax = arr.max()
+            if amax > amin:
+                norm = (arr - amin) / (amax - amin)
+            else:
+                norm = arr - amin
+            to_save = (norm * 255).astype(np.uint8)
+            out_jpg = output_folder / f"{image_prefix}_{fname}.jpg"
+            skimage.io.imsave(str(out_jpg), to_save)
+            print(f"Saved {out_jpg}")
 
 if __name__ == "__main__":
     # 1. Rectangle detection works best using non-PSL .tif - use this file to obtain rectangle coordinates
@@ -260,5 +290,7 @@ if __name__ == "__main__":
         image_path=image_to_crop, 
         rectangles=rectangles, 
         filenames=filenames, 
-        output_folder=Path("output/images")
+        output_folder=Path("output/images"),
+        save=False,
+        save_jpeg=True,
         )
