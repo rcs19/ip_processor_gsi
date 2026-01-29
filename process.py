@@ -135,11 +135,93 @@ def get_rectangles(scan_path: Path, show_steps = False):
 
     return rectangles
 
+def interactive_crop_and_save(image_path, rectangles, filenames, output_folder):
+    """
+    Display image with rectangles, let user click rectangles in order of filenames, and save crops.
+    Args:
+        image_path: Path to the image file.
+        rectangles: List of (x, y, w, h) tuples.
+        filenames: List of output filenames (no extension).
+        output_folder: Folder to save cropped images.
+    """
+    import matplotlib.patches as patches
+    image = skimage.io.imread(image_path)
+
+    if image.dtype != np.uint8:
+        arr = image.astype(np.float32)
+        expadjusted = np.power((arr - arr.min()) / (arr.max() - arr.min()), 0.3)
+    else:
+        expadjusted = np.power((image - image.min()) / (image.max() - image.min()), 0.3)
+    
+    downsample_factor = 8
+    img_disp = downsample(expadjusted, factor=downsample_factor)
+    # Normalize for display
+    if img_disp.max() > 0:
+        img_disp = img_disp / img_disp.max()
+    img_disp = (img_disp * 255).astype(np.uint8)
+    if img_disp.ndim == 2:
+        img_disp_rgb = cv2.cvtColor(img_disp, cv2.COLOR_GRAY2RGB)
+    else:
+        img_disp_rgb = img_disp
+
+    ext = Path(image_path).suffix
+    image_prefix = image_path.stem.replace("-[Phosphor]", "")
+
+    fig, ax = plt.subplots()
+    ax.imshow(img_disp_rgb)
+    rect_patches = []
+    for i, (x, y, w, h) in enumerate(rectangles):
+        x_s, y_s, w_s, h_s = x // downsample_factor, y // downsample_factor, w // downsample_factor, h // downsample_factor
+        rect = patches.Rectangle((x_s, y_s), w_s, h_s, linewidth=2, edgecolor='cyan', facecolor='none')
+        ax.add_patch(rect)
+        rect_patches.append(rect)
+        ax.text(x_s, y_s, str(i+1), color='yellow', fontsize=10, weight='bold')
+    plt.title("Click rectangles in order:\n"+",".join(filenames))
+
+    selected = []
+    used = set()
+
+    def on_click(event):
+        if event.inaxes != ax:
+            return
+        px, py = int(event.xdata), int(event.ydata)
+        for idx, (x, y, w, h) in enumerate(rectangles):
+            if idx in used:
+                continue
+            x_s, y_s, w_s, h_s = x // downsample_factor, y // downsample_factor, w // downsample_factor, h // downsample_factor
+            if x_s <= px <= x_s + w_s and y_s <= py <= y_s + h_s:
+                selected.append(idx)
+                used.add(idx)
+                rect_patches[idx].set_edgecolor('red')
+                fig.canvas.draw()
+                print(f"Selected rectangle {idx+1} for {filenames[len(selected)-1]}")
+                if len(selected) == len(filenames):
+                    plt.close(fig)
+                break
+
+    cid = fig.canvas.mpl_connect('button_press_event', on_click)
+    plt.show()
+    fig.canvas.mpl_disconnect(cid)
+
+    # if len(selected) != len(filenames):
+    #     print("Selection incomplete. No files saved.")
+    #     return
+
+    output_folder = Path(output_folder)
+    output_folder.mkdir(parents=True, exist_ok=True)
+    for idx, fname in zip(selected, filenames):
+        rect = rectangles[idx]
+        out_path = output_folder / f"{image_prefix}_{fname}{ext}"
+        crop_and_save(image_path, rect, out_path)
+        print(f"Saved {out_path}")
+
 if __name__ == "__main__":
     scan_file_path = Path("data/shot06-[Phosphor].tif")
+    rectangles = get_rectangles(scan_file_path, show_steps=False)
+
     filenames = [
         "HOPG",
-        "XCPI",
+        "XPCI",
         "KE",
         "ESM1e",
         "ESM1p",
@@ -149,7 +231,10 @@ if __name__ == "__main__":
         "XRPHC2",
         "HXRD1",
         "HXRD2",
+        "XPCI_rear",
+        "ESPEC_ext_1",
+        "ESPEC_ext_2",
+        "ESPEC_ext_3",
+        "ESPEC_ext_4"
         ]
-    rectangles = get_rectangles(scan_file_path, show_steps=True)
-    plt.show()
-    crop_and_save(scan_file_path, rectangles[0], Path("output/test.tif"))
+    interactive_crop_and_save(Path("data/shot06-[Phosphor]_PSL.tif"), rectangles, filenames, Path("output/images"))
